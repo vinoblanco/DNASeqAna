@@ -1,3 +1,5 @@
+import time
+
 class Node:
   def __init__(self, data):
     self.data = data
@@ -34,3 +36,9 @@ class LinkedList:
             node = node.next
             count += 1
         return count
+
+    def pairwise(self):
+        node = self.head
+        while node and node.next:
+            yield node, node.next
+            node = node.next
