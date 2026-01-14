@@ -1,11 +1,21 @@
 import itertools
+import sqlite3, tempfile
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from Bio import SeqIO
 from linkedList import LinkedList
 
+#todo motive abgleichen
+#todo optimieren das nicht komplette Sequenz mehrfach analysiert
+
 #fasta stückweise einlesen --> todo RAM gesteuert machen
-def fasta_in_chunks(fasta_path, chunk_size):
+def fasta_in_chunks(fasta_path: str, chunk_size):
+    """
+     test
+    :param fasta_path: Pfad zur Fasta Datei
+    :param chunk_size: Wie viele Sequenzen pro Chunk berechnet werden
+    :return: generiert Chunks mit Sequenzen
+    """
     chunk = []
     for record in SeqIO.parse(fasta_path, "fasta"):
         chunk.append(record)
@@ -24,15 +34,17 @@ def fast_single_record(fasta_path):
             return chunk
     return None
 
-#Hashmap erstellen und mit den linked lists befüllen
 def process_sequence(seq):
-    base_binary = {"A": "00", "C": "01", "G": "10", "T": "11"}
-    #base_tuple = make_dictionary()
+    """
+    In dieser Methode wird ein Dictionary erstellt, welches mit Basentupeln als Keys und den vorkommen dieser als
+    Value befüllt wird.
+    :param seq: die Sequenz, für welche das Dic erstellt wird
+    :return: das Dictionary
+    """
     base_tuple = {''.join(kombi): None for kombi in itertools.product(['A','C','G','T'], repeat=2)}
-    print(base_tuple)
+    #print(base_tuple)
 
     for i in range(len(seq) - 1):
-        #key = int(base_binary[seq[i]]+base_binary[seq[i + 1]],2)
         key = str(seq[i:i+2])
         if base_tuple[key] is None:
             ll = LinkedList()
@@ -40,7 +52,6 @@ def process_sequence(seq):
             ll.append(i)
         else:
             base_tuple[key].append(i)
-    print_hashmap(base_tuple)
 
     return base_tuple
 
@@ -54,48 +65,44 @@ def print_hashmap(base_tuple):
         except:
             count = 0
 
-#liest die Hashmap ein und gibt die Repeats mit einigen Daten aus
 def statistical_repeats(base_tuple, seq, min_repeats, max_repeats):
+    """
+    Werdet das Dictionary aus und schreibt die gefundenen Repeats in eine Datenbank
+    :param base_tuple: das Dictionary
+    :param seq: die Sequenz des Dictionary
+    :param min_repeats: mindest Anzahl der Vorkommen, damit es als Repeat angesehen wird
+    :param max_repeats: maximale Anzahl der Vorkommen, damit es als Repeat angesehen wird
+    """
     repeats = []
-    diffs = []
-    print(base_tuple)
-
     for key, value in base_tuple.items():
-        print(key)
         if value is None or value.lenght() < min_repeats:
             continue
-
-        print(key)
         for counter, firststart in calculate_difference(value):
-            print(counter)
             for period, count in counter.items():
                 if count >= min_repeats - 1:
                     start = firststart
-                    print(start)
                     end = start + period * count
 
                     if end <= len(seq):
-                        motif = seq[start:start+period]
+                        id = seq.id
+                        motif = str(canonical_dna_motif(seq[start:start+period].seq))
+                        #print(motif)
+                        repeats.append((id, motif, start, end, count))
 
-                        repeats.append({
-                            "pair": key,
-                            "start": start,
-                            "period": period,
-                            "repeat": count + 1,
-                            "motif": motif
-                        })
+    cur.executemany(
+        "INSERT OR IGNORE INTO repeats VALUES (?,?,?,?,?)",
+        repeats
+    )
+    conn.commit()
 
-    return repeats
-
-
-def make_dictionary():
-    d = {}
-    for i in range(0,16):
-        d[i] = None
-    return d
-
-#Nimmt immer zwei Vorkommen von einem BasenTuple und vergleicht die Abstände, sobald sich dieser ändert wird es ausgegeben
+#todo motive vergleichen (hash vergleichen)
 def calculate_difference(ll):
+    """
+    Wertet die Liked List aus, welche alle vorkommen eines Basentupels enthalten. Berechnet ob der abstand zwischen
+    zwei Vorkommen periodisch ist.
+    :param ll: Linked List mit den Vorkommen
+    :return: Wann das Vorkommen startet (firststart) und wie oft es auftritt (count)
+    """
     last = 0
     firststart = 0
     counter = {}
@@ -113,6 +120,19 @@ def calculate_difference(ll):
     if counter:
         yield counter, firststart
 
+#gibt das reverse complement von einer Sequenz zurück
+def reverse_complement(seq):
+    return seq.translate(str.maketrans("ACGT", "TGCA"))[::-1]
+
+def canonical_dna_motif(seq):
+    """
+    Sortiert eine Sequenz lexiographisch und gibt das kleinste Ergebnis zurück
+    :param seq: Sequenz
+    :return: kleinste Sortierung
+    """
+    candidates = [seq[i:] + seq[:i] for i in range(len(seq))]
+    return min(candidates)
+
 if __name__ == "__main__":
     fasta_path = "test_data_split.fasta"
     chunk_size = 5
@@ -120,9 +140,29 @@ if __name__ == "__main__":
     min_repeats = 5
     max_repeats = 10
 
+    tmp = tempfile.NamedTemporaryFile(suffix=".db")
+    conn = sqlite3.connect(tmp.name)
+
+    cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE repeats (
+        seq_number integer NOT NULL,
+        motif text NOT NULL,
+        start integer NOT NULL,
+        period integer NOT NULL,
+        repeat integer NOT NULL,
+        UNIQUE (seq_number, motif))
+    """)
+
+    cur.execute("CREATE INDEX idx_motif ON repeats (motif)")
+    conn.commit()
+
     #test
     chunk = fast_single_record(fasta_path)
-    print(statistical_repeats(process_sequence(chunk[0].seq), chunk[0], min_repeats, max_repeats))
+    statistical_repeats(process_sequence(chunk[0].seq), chunk[0], min_repeats, max_repeats)
+    cur.execute("""SELECT * FROM repeats ORDER BY motif""")
+    for row in cur.fetchall():
+        print(row)
 
     #main
 
