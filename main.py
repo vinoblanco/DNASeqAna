@@ -13,8 +13,8 @@ except ImportError:
 
 def _get_available_memory_bytes() -> int:
     """
-    Return available RAM in bytes. Prefer psutil if installed,
-    otherwise read /proc/meminfo (Linux).
+    Gibt den verfügbaren RAM in Bytes zurück. Bevorzuge psutil, wenn installiert,
+    ansonsten lese /proc/meminfo (Linux).
     """
     if psutil:
         return int(psutil.virtual_memory().available)
@@ -38,12 +38,11 @@ def fasta_in_chunks(fasta_path: str,
                     ram_fraction: float = 0.5,
                     avg_bytes_per_base: float = 1.5) -> Iterator[List]:
     """
-    Yield lists of SeqRecord objects sized by available RAM.
-    Parameters:
-    - fasta_path: path to FASTA file
-    - max_ram_mb: optional explicit max RAM (MB) to use for a chunk
-    - ram_fraction: fraction of available RAM to consume (0 < ram_fraction <= 1)
-    - avg_bytes_per_base: estimated bytes used per base in memory (tweak as needed)
+    Gibt Listen von SeqRecord Objekten zurück, die nach verfügbarem RAM dimensioniert sind.
+    - fasta_path: Pfad zur FASTA Datei
+    - max_ram_mb: maximaler RAM in MB (überschreibt ram_fraction, wenn gesetzt)
+    - ram_fraction: Anteil des verfügbaren RAMs, der genutzt werden soll (0.0 - 1.0)
+    - avg_bytes_per_base: geschätzte durchschnittliche Bytes pro Base in SeqRecord
     """
     if max_ram_mb is not None:
         allowed_bytes = int(max_ram_mb * 1024 * 1024)
@@ -84,9 +83,9 @@ def fasta_in_chunks(fasta_path: str,
 
 def process_sequence(seq_str: str):
     """
-    In dieser Methode wird ein Dictionary erstellt, welches mit Basentupeln als Keys und den vorkommen dieser als
+    In dieser Methode wird ein Dictionary erstellt, welches mit Basentupeln als Keys und den Vorkommen dieser als
     Value befüllt wird.
-    :param seq_str: die Sequenz, für welche das Dic erstellt wird
+    :param seq_str: die Sequenz, für welche das Dict erstellt wird
     :return: das Dictionary
     """
     base_tuple = {''.join(kombi): None for kombi in itertools.product(['A','C','G','T'], repeat=2)}
@@ -105,11 +104,14 @@ def process_sequence(seq_str: str):
 
 def statistical_repeats(base_tuple, seq_str: str, seq_id, min_repeats, max_repeats, motive_size):
     """
-    Werdet das Dictionary aus und schreibt die gefundenen Repeats in eine Datenbank
+    Wertet das Dictionary aus und schreibt die gefundenen Repeats in eine Datenbank
     :param base_tuple: das Dictionary
-    :param seq_str: die Sequenz des Dictionary
+    :param seq_str: die Sequenz des Dictionary als String
+    :param seq_id: die ID der Sequenz
     :param min_repeats: mindest Anzahl der Vorkommen, damit es als Repeat angesehen wird
     :param max_repeats: maximale Anzahl der Vorkommen, damit es als Repeat angesehen wird
+    :param motive_size: mindest Motivgröße
+    :return: ein Array mit den gefundenen Repeats und deren Eigenschaften (Seq_ID, Motiv, Start, Periode, Anzahl)
     """
     repeats = []
     for key, value in base_tuple.items():
@@ -130,10 +132,11 @@ def statistical_repeats(base_tuple, seq_str: str, seq_id, min_repeats, max_repea
 #todo motive vergleichen (hash vergleichen)
 def calculate_difference(ll, motive_size):
     """
-    Wertet die Liked List aus, welche alle vorkommen eines Basentupels enthalten. Berechnet ob der abstand zwischen
+    Wertet die Linked List aus, welche alle vorkommen eines Basentupels enthalten. Berechnet ob der Abstand zwischen
     zwei Vorkommen periodisch ist.
-    :param ll: Linked List mit den Vorkommen
-    :return: wann das Vorkommen startet (firststart) und wie oft es auftritt (count)
+    :param ll: Linked List mit den Vorkommen des Basentupels
+    :param motive_size: mindest Motivgröße
+    :return: wann das Vorkommen startet (start) und wie oft es auftritt (count)
     """
     counter = {}
     start = None
@@ -161,8 +164,12 @@ def calculate_difference(ll, motive_size):
     if counter:
         yield counter, start
 
-#gibt das reverse complement von einer Sequenz zurück
 def reverse_complement(seq):
+    """
+    Gibt das reverse complement einer DNA Sequenz zurück
+    :param seq: DNA Sequenz
+    :return: reverse complement der DNA Sequenz
+    """
     return seq.translate(str.maketrans("ACGT", "TGCA"))[::-1]
 
 def canonical_dna_motif(seq):
@@ -204,7 +211,7 @@ def write_repeats_to_txt(db: Union[str, sqlite3.Connection], output_path: str = 
         conn = db
 
     cur = conn.cursor()
-    cur.execute("SELECT seq_number, motif, start, period, repeat FROM repeats ORDER BY motif, seq_number")
+    cur.execute("SELECT seq_number, motif, start, period, repeat FROM repeats ORDER BY motif ASC")
     rows = cur.fetchall()
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -221,6 +228,8 @@ if __name__ == "__main__":
     motive_size = 4
     min_repeats = 3
     max_repeats = 10 #todo nutzen
+
+    print("Starting processing...")
 
     tmp = tempfile.NamedTemporaryFile(suffix=".db")
     conn = sqlite3.connect(tmp.name)
@@ -243,6 +252,7 @@ if __name__ == "__main__":
         conn = sqlite3.connect(tmp.name)
         cur = conn.cursor()
         futures = []
+        print("Processing FASTA in chunks...")
         for chunk in fasta_in_chunks(fasta_path, ram_fraction=0.4):
             lightweight = [(rec.id, str(rec.seq)) for rec in chunk]
             futures.append(executor.submit(worker_process_chunk, lightweight, min_repeats, max_repeats, motive_size))
@@ -253,6 +263,7 @@ if __name__ == "__main__":
                     cur.executemany("INSERT OR IGNORE INTO repeats VALUES (?,?,?,?,?)", rows)
                     conn.commit()
 
+    print("Writing results to output.txt...")
     write_repeats_to_txt(conn, "output.txt")
     conn.close()
     tmp.close()
