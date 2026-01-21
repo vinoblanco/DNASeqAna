@@ -30,7 +30,6 @@ def _get_available_memory_bytes() -> int:
     #Last resort: assume 256 MB available
     return 256 * 1024 * 1024
 
-#todo motive abgleichen
 #todo optimieren das nicht komplette Sequenz mehrfach analysiert
 
 def fasta_in_chunks(fasta_path: str,
@@ -119,11 +118,11 @@ def statistical_repeats(base_tuple, seq_str: str, seq_id, min_repeats, max_repea
         if value is None or value.lenght() < min_repeats:
             continue
         for start, period, occurrences in calculate_motif_repeat_in_sequence(value, seq_str, motive_size):
-            if occurrences >= min_repeats:
+            if min_repeats <= occurrences <= max_repeats:
                 end = start + period * occurrences
                 if end <= len(seq_str):
                     motif = str(canonical_dna_motif(seq_str[start:start + period]))
-                    repeats.append((seq_id, motif, start, period, occurrences))
+                    repeats.append((seq_id, motif, period, occurrences))
     return repeats
 
 #todo motive vergleichen (hash vergleichen)
@@ -290,12 +289,12 @@ def write_repeats_to_txt(db: Union[str, sqlite3.Connection], output_path: str = 
         conn = db
 
     cur = conn.cursor()
-    cur.execute("SELECT seq_number, motif, start, period, repeat FROM repeats ORDER BY motif ASC")
+    cur.execute("SELECT seq_number, motif, period, repeat FROM repeats ORDER BY motif ASC")
     rows = cur.fetchall()
 
     with open(output_path, "w", encoding="utf-8") as f:
         # header
-        f.write("seq_number\tmotif\tstart\tperiod\trepeat\n")
+        f.write("seq_number\tmotif\tperiod\trepeat\n")
         for row in rows:
             f.write("\t".join(str(col) for col in row) + "\n")
 
@@ -306,7 +305,7 @@ if __name__ == "__main__":
     fasta_path = "test_data_split.fasta"
     motive_size = 4
     min_repeats = 3
-    max_repeats = 10 #todo nutzen
+    max_repeats = 10
 
     print("Starting processing...")
 
@@ -318,7 +317,6 @@ if __name__ == "__main__":
     CREATE TABLE repeats (
         seq_number text NOT NULL,
         motif text NOT NULL,
-        start integer NOT NULL,
         period integer NOT NULL,
         repeat integer NOT NULL,
         UNIQUE (seq_number, motif))
@@ -339,7 +337,7 @@ if __name__ == "__main__":
             for future in as_completed(futures):
                 rows = future.result()
                 if rows:
-                    cur.executemany("INSERT OR IGNORE INTO repeats VALUES (?,?,?,?,?)", rows)
+                    cur.executemany("INSERT OR IGNORE INTO repeats VALUES (?,?,?,?)", rows)
                     conn.commit()
 
     print("Writing results to output.txt...")
