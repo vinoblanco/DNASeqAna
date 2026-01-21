@@ -115,24 +115,21 @@ def statistical_repeats(base_tuple, seq_str: str, seq_id, min_repeats, max_repea
     """
     repeats = []
     for key, value in base_tuple.items():
+        #überspringt zu kurze oder leere Dictionary Einträge
         if value is None or value.lenght() < min_repeats:
             continue
-        for counter, first_start in calculate_difference(value, motive_size):
-            for period, count in counter.items():
-                if count >= min_repeats - 1:
-                    start = first_start
-                    end = start + period * count
-
-                    if end <= len(seq_str):
-                        motif = str(canonical_dna_motif(seq_str[start:start + period]))
-                        #print(motif)
-                        repeats.append((seq_id, motif, start, period, count+1))
+        for start, period, occurrences in calculate_motif_repeat_in_sequence(value, seq_str, motive_size):
+            if occurrences >= min_repeats:
+                end = start + period * occurrences
+                if end <= len(seq_str):
+                    motif = str(canonical_dna_motif(seq_str[start:start + period]))
+                    repeats.append((seq_id, motif, start, period, occurrences))
     return repeats
 
 #todo motive vergleichen (hash vergleichen)
 def calculate_difference(ll, motive_size):
     """
-    Wertet die Linked List aus, welche alle vorkommen eines Basentupels enthalten. Berechnet ob der Abstand zwischen
+    Wertet die Linked List aus, welche alle vorkommen eines Basentupels enthalten. Berechnet, ob der Abstand zwischen
     zwei Vorkommen periodisch ist.
     :param ll: Linked List mit den Vorkommen des Basentupels
     :param motive_size: mindest Motivgröße
@@ -163,6 +160,88 @@ def calculate_difference(ll, motive_size):
 
     if counter:
         yield counter, start
+
+def calculate_motif_repeat_in_sequence(ll, seq_str: str, motive_size: int):
+    """
+    Findet Motive in der Sequenz anhand der Linked List mit den Vorkommen eines Basentupels
+    :param ll: Linked List mit den Vorkommen des Basentupels
+    :param seq_str: die Sequenz als String
+    :param motive_size: mindest Motivgröße
+    :return: wann das Vorkommen startet (start), die Periode (period) und wie oft es auftritt (occurrences)
+    """
+    run_period = None
+    run_start = None
+    run_occurrences = 1
+    run_motif = None
+
+    for n, n1 in ll.pairwise():
+        current = n1.data - n.data
+
+        #Abbruchbedingung für zu kurze Motive
+        if current < motive_size:
+            if run_period is not None and run_occurrences >= 2:
+                yield run_start, run_period, run_occurrences
+            run_period = None
+            run_start = None
+            run_occurrences = 1
+            run_motif = None
+            continue
+
+        #extrahiere Motive zum Vergleichen
+        motif_n = seq_str[n.data:n.data + current]
+        motif_n1 = seq_str[n1.data:n1.data + current]
+
+        #Abbruchbedingung für unvollständige Motive am Ende der Sequenz
+        if len(motif_n) != current or len(motif_n1) != current:
+            if run_period is not None and run_occurrences >= 2:
+                yield run_start, run_period, run_occurrences
+            run_period = None
+            run_start = None
+            run_occurrences = 1
+            run_motif = None
+            continue
+
+        #Wenn noch kein Run aktiv ist
+        if run_period is None:
+            #Starte neuen Run, wenn Motive übereinstimmen
+            if motif_n == motif_n1:
+                run_period = current
+                run_start = n.data
+                run_occurrences = 2
+                run_motif = motif_n
+            #Setze Werte zurück, wenn kein Run gestartet werden kann
+            else:
+                run_period = None
+                run_start = None
+                run_occurrences = 1
+                run_motif = None
+
+        #Wenn bereits ein Run aktiv ist
+        else:
+            #Run fortsetzen, wenn Periode und Motiv übereinstimmen
+            if current == run_period and motif_n1 == run_motif:
+                run_occurrences += 1
+
+            #Run beenden und neuen Run starten, wenn die folgenden Motive übereinstimmt
+            else:
+                #Run beenden
+                if run_occurrences >= 2:
+                    yield run_start, run_period, run_occurrences
+                #neuer Run, falls Motive übereinstimmen
+                if motif_n == motif_n1:
+                    run_period = current
+                    run_start = n.data
+                    run_occurrences = 2
+                    run_motif = motif_n
+                else:
+                    run_period = None
+                    run_start = None
+                    run_occurrences = 1
+                    run_motif = None
+
+    #Run vom letzten Durchlauf ausgeben
+    if run_period is not None and run_occurrences >= 2:
+        yield run_start, run_period, run_occurrences
 
 def reverse_complement(seq):
     """
