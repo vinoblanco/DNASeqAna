@@ -1,6 +1,7 @@
 import itertools
 import sqlite3, tempfile
 import os
+import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from Bio import SeqIO
 from linkedList import LinkedList
@@ -10,6 +11,9 @@ try:
     import psutil
 except ImportError:
     psutil = None
+
+#todo reverse complement berücksichtigen
+#todo Parameter des skript anpassbar machen (argparse)
 
 def _get_available_memory_bytes() -> int:
     """
@@ -29,8 +33,6 @@ def _get_available_memory_bytes() -> int:
                     return int(parts[1]) * 1024
     #Last resort: assume 256 MB available
     return 256 * 1024 * 1024
-
-#todo optimieren das nicht komplette Sequenz mehrfach analysiert
 
 def fasta_in_chunks(fasta_path: str,
                     max_ram_mb: int = None,
@@ -101,6 +103,7 @@ def process_sequence(seq_str: str):
 
     return base_tuple
 
+#todo optimieren das nicht komplette Sequenz mehrfach analysiert wird
 def statistical_repeats(base_tuple, seq_str: str, seq_id, min_repeats, max_repeats, motive_size):
     """
     Wertet das Dictionary aus und schreibt die gefundenen Repeats in eine Datenbank
@@ -120,12 +123,13 @@ def statistical_repeats(base_tuple, seq_str: str, seq_id, min_repeats, max_repea
         for start, period, occurrences in calculate_motif_repeat_in_sequence(value, seq_str, motive_size):
             if min_repeats <= occurrences <= max_repeats:
                 end = start + period * occurrences
-                if end <= len(seq_str):
-                    motif = str(canonical_dna_motif(seq_str[start:start + period]))
+                motif = str(canonical_dna_motif(seq_str[start:start + period]))
+                if end <= len(seq_str) and len(motif) >= motive_size:
                     repeats.append((seq_id, motif, period, occurrences))
+                else:
+                    print("zu kurzes motiv")
     return repeats
 
-#todo motive vergleichen (hash vergleichen)
 def calculate_difference(ll, motive_size):
     """
     Wertet die Linked List aus, welche alle vorkommen eines Basentupels enthalten. Berechnet, ob der Abstand zwischen
@@ -302,10 +306,12 @@ def write_repeats_to_txt(db: Union[str, sqlite3.Connection], output_path: str = 
         conn.close()
 
 if __name__ == "__main__":
-    fasta_path = "test_data_split.fasta"
-    motive_size = 4
-    min_repeats = 3
-    max_repeats = 10
+    parser = argparse.ArgumentParser(description="Findet und speichert periodische Repeats in DNA Sequenzen aus einer FASTA Datei.")
+    parser.add_argument("fasta", help="Pfad zur Eingabe-FASTA Datei")
+    parser.add_argument("--motive_size", type=int, default=4, help="Mindestgröße des Motivs (Standard: 4)")
+    parser.add_argument("--min_repeats", type=int, default=3, help="Minimale Anzahl der Wiederholungen (Standard: 3)")
+    parser.add_argument("--max_repeats", type=int, default=10, help="Maximale Anzahl der Wiederholungen (Standard: 10)")
+    args = parser.parse_args()
 
     print("Starting processing...")
 
@@ -330,9 +336,9 @@ if __name__ == "__main__":
         cur = conn.cursor()
         futures = []
         print("Processing FASTA in chunks...")
-        for chunk in fasta_in_chunks(fasta_path, ram_fraction=0.4):
+        for chunk in fasta_in_chunks(args.fasta, ram_fraction=0.4):
             lightweight = [(rec.id, str(rec.seq)) for rec in chunk]
-            futures.append(executor.submit(worker_process_chunk, lightweight, min_repeats, max_repeats, motive_size))
+            futures.append(executor.submit(worker_process_chunk, lightweight, args.min_repeats, args.max_repeats, args.motive_size))
 
             for future in as_completed(futures):
                 rows = future.result()
