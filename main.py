@@ -308,12 +308,16 @@ def write_repeats_to_txt(db: Union[str, sqlite3.Connection], output_path: str = 
         conn = db
 
     cur = conn.cursor()
-    cur.execute("SELECT * FROM repeats ORDER BY motif ASC")
+    cur.execute("SELECT motif, "
+                "SUM(repeat) AS total_repeats, "
+                "COUNT(seq_number) AS occurrences, "
+                "ROUND(SUM(repeat) * 1.0 / SUM(SUM(repeat)) OVER (), 2) AS proportion " 
+                "FROM repeats GROUP BY motif ORDER BY total_repeats DESC")
     rows = cur.fetchall()
 
     with open(output_path, "w", encoding="utf-8") as f:
         # header
-        f.write("seq_number\tmotif\tperiod\trepeat\n")
+        f.write("motif\ttotal_repeats\toccurrences\tproportion\n")
         for row in rows:
             f.write("\t".join(str(col) for col in row) + "\n")
 
