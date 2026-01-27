@@ -16,7 +16,6 @@ except ImportError:
 #todo reverse complement berücksichtigen
 #todo Parameter des skript anpassbar machen (argparse)
 
-#todo Ergebnisse identische repeats gesamt count und verhältnis (wie viel prozent aller tandem repeats)
 #todo timing analyse anzahl seq/ länge sequenz woran hängt es länger
 #todo mit trfinder vergleichen
 
@@ -327,9 +326,10 @@ def write_repeats_to_txt(db: Union[str, sqlite3.Connection], output_path: str = 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Findet und speichert periodische Repeats in DNA Sequenzen aus einer FASTA Datei.")
     parser.add_argument("fasta", help="Pfad zur Eingabe-FASTA Datei")
-    parser.add_argument("--motive_size", type=int, default=4, help="Mindestgröße des Motivs (Standard: 4)")
-    parser.add_argument("--min_repeats", type=int, default=3, help="Minimale Anzahl der Wiederholungen (Standard: 3)")
-    parser.add_argument("--max_repeats", type=int, default=10, help="Maximale Anzahl der Wiederholungen (Standard: 10)")
+    parser.add_argument("-m", "--motive_size", type=int, default=4, help="Mindestgröße des Motivs (Standard: 4)")
+    parser.add_argument("-l", "--min_repeats", type=int, default=3, help="Minimale Anzahl der Wiederholungen (Standard: 3)")
+    parser.add_argument("-u", "--max_repeats", type=int, default=10, help="Maximale Anzahl der Wiederholungen (Standard: 10)")
+    parser.add_argument("-o", "--output", type=str, default="output.txt", help="Pfad zur Ausgabedatei (Standard: output.txt)")
     args = parser.parse_args()
 
     print("Starting processing...")
@@ -365,7 +365,7 @@ if __name__ == "__main__":
                     cur.executemany("INSERT OR IGNORE INTO repeats VALUES (?,?,?,?)", rows)
                     conn.commit()
 
-    print("Writing results to output.txt...")
-    write_repeats_to_txt(conn, "output.txt")
+    print("Writing results to " + args.output + "...")
+    write_repeats_to_txt(conn, args.output)
     conn.close()
     tmp.close()
