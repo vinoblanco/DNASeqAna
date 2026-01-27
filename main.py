@@ -6,6 +6,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from Bio import SeqIO
 from linkedList import LinkedList
 from typing import List, Iterator, Union
+from itertools import islice
 
 try:
     import psutil
@@ -14,6 +15,10 @@ except ImportError:
 
 #todo reverse complement berücksichtigen
 #todo Parameter des skript anpassbar machen (argparse)
+
+#todo Ergebnisse identische repeats gesamt count und verhältnis (wie viel prozent aller tandem repeats)
+#todo timing analyse anzahl seq/ länge sequenz woran hängt es länger
+#todo mit trfinder vergleichen
 
 def _get_available_memory_bytes() -> int:
     """
@@ -81,6 +86,16 @@ def fasta_in_chunks(fasta_path: str,
 
     if chunk:
         yield chunk
+
+
+def equal_fasta_chunks(path, chunk_size=64):
+    with open(path) as handle:
+        records = SeqIO.parse(handle, "fasta")
+        while True:
+            chunk = list(islice(records, chunk_size))
+            if not chunk:
+                break
+            yield chunk
 
 def process_sequence(seq_str: str):
     """
@@ -293,7 +308,7 @@ def write_repeats_to_txt(db: Union[str, sqlite3.Connection], output_path: str = 
         conn = db
 
     cur = conn.cursor()
-    cur.execute("SELECT seq_number, motif, period, repeat FROM repeats ORDER BY motif ASC")
+    cur.execute("SELECT * FROM repeats ORDER BY motif ASC")
     rows = cur.fetchall()
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -336,7 +351,7 @@ if __name__ == "__main__":
         cur = conn.cursor()
         futures = []
         print("Processing FASTA in chunks...")
-        for chunk in fasta_in_chunks(args.fasta, ram_fraction=0.4):
+        for chunk in equal_fasta_chunks(args.fasta):
             lightweight = [(rec.id, str(rec.seq)) for rec in chunk]
             futures.append(executor.submit(worker_process_chunk, lightweight, args.min_repeats, args.max_repeats, args.motive_size))
 
