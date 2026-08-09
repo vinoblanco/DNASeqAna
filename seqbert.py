@@ -90,11 +90,10 @@ def detect_repeats(
         if len(positions) < min_repeats:
             continue
 
-        for start, period, repeats in search_motif(
+        for start, period, repeats, end in search_motif(
             positions, seq_str, min_motive_size, max_motive_size, covered
         ):
             if min_repeats <= repeats:
-                end = start + period * repeats
                 motif = str(canonical_dna_motif(seq_str[start : start + period]))
                 if end <= len(seq_str):
                     tandemrepeats.append(
@@ -202,7 +201,7 @@ def yield_run(
         if not any(covered[i] for i in range(start, min(end, len(covered)))):
             for i in range(start, min(end, len(covered))):
                 covered[i] = 1
-            yield run_start, run_period, run_repeats
+            yield run_start, run_period, run_repeats, end
 
 
 def reverse_complement(seq: str):
@@ -211,7 +210,7 @@ def reverse_complement(seq: str):
     :param seq: the DNA sequence as a string
     :return: the reverse complement of the DNA sequence as a string
     """
-    return seq.translate(DNA_TRANS_TABLE)[::-1]
+    return seq[::-1].translate(DNA_TRANS_TABLE)
 
 
 def canonical_dna_motif(seq: str):
@@ -289,11 +288,11 @@ def write_output(
                    a.total_repeats,
                    a.occurrences,
                    (a.total_repeats / a.occurrences)                                    AS average_length,
-                   ROUND(a.total_repeats * 1.0 / ?, 2)                                  AS proportion,
+                   ROUND((a.total_repeats * 1.0) / (a.occurrences * 1.0), 2)                                  AS proportion,
                    a.reverse_comp,
                    b.total_repeats                                                      AS rc_total_repeats,
                    b.occurrences                                                        AS rc_occurrences,
-                   b.total_repeats / b.occurrences                                      AS average_length,
+                   ROUND((b.total_repeats * 1.0) / (b.occurrences * 1.0), 2)            AS average_length,
                    ROUND(b.total_repeats * 1.0 / ?, 2)                                  AS rc_proportion,
                    (a.total_repeats + COALESCE(b.total_repeats, 0))                     AS combined_repeats,
                    (a.occurrences + COALESCE(b.occurrences, 0))                         AS combinded_occurences,
@@ -301,18 +300,19 @@ def write_output(
             FROM agg_temp a
                      LEFT JOIN agg_temp b ON a.reverse_comp = b.motif
             WHERE a.reverse_comp IS NOT NULL
-              AND (a.total_repeats > COALESCE(b.total_repeats, 0)
+              AND (a.motif = a.reverse_comp
+                OR a.total_repeats > COALESCE(b.total_repeats, 0)
                 OR (a.total_repeats = COALESCE(b.total_repeats, 0) AND a.motif < b.motif))
             ORDER BY combined_proportion DESC \
             """
-        cur.execute(query, (grand_total, grand_total, grand_total))
+        cur.execute(query, (grand_total, grand_total))
     else:
         query = """
                 SELECT a.motif,
                        a.total_repeats,
                        a.occurrences,
-                       (a.total_repeats / a.occurrences)   AS average_length,
-                       ROUND(a.total_repeats * 1.0 / ?, 2) AS proportion
+                       ROUND((a.total_repeats * 1.0) / (a.occurrences * 1.0), 2)   AS average_length,
+                       ROUND(a.total_repeats * 1.0 / ?, 2)                         AS proportion
                 FROM agg_temp a
                 ORDER BY proportion DESC \
                 """
