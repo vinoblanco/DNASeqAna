@@ -93,6 +93,7 @@ def detect_repeats(
         for start, period, repeats, end in search_motif(
             positions, seq_str, min_motive_size, max_motive_size, covered
         ):
+            print(f"Found motif: {seq_str[start : start + period]} at position {start} with period {period} and repeats {repeats}")
             if min_repeats <= repeats:
                 motif = str(canonical_dna_motif(seq_str[start : start + period]))
                 if end <= len(seq_str):
@@ -198,7 +199,7 @@ def yield_run(
     if run_period is not None and run_repeats >= 2:
         start = run_start
         end = run_start + run_period * run_repeats
-        if not any(covered[i] for i in range(start, min(end, len(covered)))):
+        if not all(covered[i] for i in range(start, min(end, len(covered)))):
             for i in range(start, min(end, len(covered))):
                 covered[i] = 1
             yield run_start, run_period, run_repeats, end
@@ -330,6 +331,9 @@ def write_output(
 
 def main():
     print("Starting processing...")
+
+    if args.min_motive_size > args.max_motive_size:
+        raise ValueError("min_motive_size cannot be greater than max_motive_size")
 
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=".db")
     os.close(tmp_fd)
@@ -465,4 +469,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    main()
+    try:
+        main()
+    except ValueError as exc:
+        parser.error(str(exc))
