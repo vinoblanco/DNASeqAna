@@ -93,7 +93,7 @@ def detect_repeats(
         for start, period, repeats, end in search_motif(
             positions, seq_str, min_motive_size, max_motive_size, covered
         ):
-            print(f"Found motif: {seq_str[start : start + period]} at position {start} with period {period} and repeats {repeats}")
+            print(start, period, repeats, end)
             if min_repeats <= repeats:
                 motif = str(canonical_dna_motif(seq_str[start : start + period]))
                 if end <= len(seq_str):
@@ -127,7 +127,7 @@ def search_motif(positions: list, seq_str: str, min_motive_size: int, max_motive
     for n, n1 in zip(positions, positions[1:]):
 
         if covered[n] or covered[n1]:
-            yield from yield_run(covered, run_repeats, run_period, run_start)
+            yield from yield_run(covered, run_repeats, run_period, run_start, seq_str)
             run_period = None
             run_start = None
             run_repeats = 1
@@ -137,7 +137,7 @@ def search_motif(positions: list, seq_str: str, min_motive_size: int, max_motive
         current = n1 - n
 
         if current < min_motive_size or current > max_motive_size:
-            yield from yield_run(covered, run_repeats, run_period, run_start)
+            yield from yield_run(covered, run_repeats, run_period, run_start, seq_str)
             run_period = None
             run_start = None
             run_repeats = 1
@@ -148,7 +148,7 @@ def search_motif(positions: list, seq_str: str, min_motive_size: int, max_motive
         motif_n1 = seq_str[n1 : n1 + current]
 
         if len(motif_n) != current or len(motif_n1) != current:
-            yield from yield_run(covered, run_repeats, run_period, run_start)
+            yield from yield_run(covered, run_repeats, run_period, run_start, seq_str)
             run_period = None
             run_start = None
             run_repeats = 1
@@ -167,7 +167,7 @@ def search_motif(positions: list, seq_str: str, min_motive_size: int, max_motive
             if current == run_period and motif_n1 == run_motif:
                 run_repeats += 1
             else:
-                yield from yield_run(covered, run_repeats, run_period, run_start)
+                yield from yield_run(covered, run_repeats, run_period, run_start, seq_str)
                 if motif_n == motif_n1:
                     run_period = current
                     run_start = n
@@ -179,7 +179,7 @@ def search_motif(positions: list, seq_str: str, min_motive_size: int, max_motive
                     run_repeats = 1
                     run_motif = None
 
-    yield from yield_run(covered, run_repeats, run_period, run_start)
+    yield from yield_run(covered, run_repeats, run_period, run_start, seq_str)
 
 
 def yield_run(
@@ -187,6 +187,7 @@ def yield_run(
     run_repeats: int,
     run_period: Any | None,
     run_start: Any | None,
+    seq_str: str,
 ):
     """
     Yields the start, period and number of occurrences of a motif if it meets the criteria and marks the positions as covered.
@@ -194,15 +195,23 @@ def yield_run(
     :param run_repeats: the number of occurrences of the current motif
     :param run_period: the period of the current motif
     :param run_start: the start position of the current motif
+    :param seq_str: the sequence as a string
     :return: a generator yielding the start, period and number of occurrences of a motif if it meets the criteria
     """
     if run_period is not None and run_repeats >= 2:
         start = run_start
         end = run_start + run_period * run_repeats
+        while start > 0 and seq_str[start - 1] == seq_str[start - 1 + run_period]:
+            start -= 1
+
+        while end < len(seq_str) and seq_str[end - run_period] == seq_str[end]:
+            end += 1
+
         if not all(covered[i] for i in range(start, min(end, len(covered)))):
             for i in range(start, min(end, len(covered))):
                 covered[i] = 1
-            yield run_start, run_period, run_repeats, end
+            print(start, run_period, (end - start) / run_period, end)
+            yield start, run_period, (end - start) / run_period, end
 
 
 def reverse_complement(seq: str):
@@ -348,8 +357,8 @@ def main():
                 (
                     seq_number   text    NOT NULL,
                     motif        text    NOT NULL,
-                    period       integer NOT NULL,
-                    repeat       integer NOT NULL,
+                    period       float NOT NULL,
+                    repeat       float NOT NULL,
                     reverse_comp text    NOT NULL
                 )
                 """)
