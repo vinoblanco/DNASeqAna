@@ -86,14 +86,13 @@ def detect_repeats(
     tandemrepeats = []
     covered = bytearray(len(seq_str))
 
-    for key, positions in dinucleotides.items():
+    for _, positions in dinucleotides.items():
         if len(positions) < min_repeats:
             continue
 
         for start, period, repeats, end in search_motif(
             positions, seq_str, min_motive_size, max_motive_size, covered
         ):
-            print(start, period, repeats, end)
             if min_repeats <= repeats:
                 motif = str(canonical_dna_motif(seq_str[start : start + period]))
                 if end <= len(seq_str):
@@ -210,7 +209,6 @@ def yield_run(
         if not all(covered[i] for i in range(start, min(end, len(covered)))):
             for i in range(start, min(end, len(covered))):
                 covered[i] = 1
-            print(start, run_period, (end - start) / run_period, end)
             yield start, run_period, (end - start) / run_period, end
 
 
